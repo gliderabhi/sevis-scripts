@@ -1,18 +1,26 @@
 #!/bin/bash
 # =============================================================
-# Shared config — fill these in before running any script
+# config.sh — shared configuration for all deploy scripts
 # =============================================================
 
-EC2_HOST="YOUR_EC2_PUBLIC_IP"          # e.g. 54.123.45.67
-EC2_USER="ec2-user"                    # ec2-user (Amazon Linux) or ubuntu (Ubuntu)
-EC2_KEY="~/.ssh/your-key.pem"          # path to your .pem key file
-APP_DIR="/opt/sevis"                   # base directory on the EC2 instance
-LOG_DIR="/var/log/sevis"               # log directory on the EC2 instance
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+EC2_HOST="32.194.147.195"
+EC2_USER="ec2-user"
+EC2_KEY="$SCRIPT_DIR/sevis.pem"
+APP_DIR="/home/ec2-user/sevis"
+LOG_DIR="/home/ec2-user/sevis/logs"
+
+JAVA_HOME="/usr/lib/jvm/java-17-amazon-corretto.x86_64"
+GRADLE_OPTS="-Xmx256m -Xms64m"
 
 # GitHub repos
+COMMON_REPO="https://github.com/gliderabhi/sevis-common"
 EUREKA_REPO="https://github.com/gliderabhi/eureka-server"
 GATEWAY_REPO="https://github.com/gliderabhi/gateway"
 USER_REPO="https://github.com/gliderabhi/user-service"
 INVENTORY_REPO="https://github.com/gliderabhi/inventory-service"
 BILLING_REPO="https://github.com/gliderabhi/billing-service"
 ORDERS_REPO="https://github.com/gliderabhi/orders-service"
+
+SSH_CMD="ssh -i $EC2_KEY -o StrictHostKeyChecking=no $EC2_USER@$EC2_HOST"
