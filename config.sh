@@ -4,6 +4,7 @@
 # =============================================================
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 EC2_HOST="32.194.147.195"
 EC2_USER="ec2-user"
@@ -12,15 +13,14 @@ APP_DIR="/home/ec2-user/sevis"
 LOG_DIR="/home/ec2-user/sevis/logs"
 
 JAVA_HOME="/usr/lib/jvm/java-17-amazon-corretto.x86_64"
-GRADLE_OPTS="-Xmx256m -Xms64m"
 
-# GitHub repos
-COMMON_REPO="https://github.com/gliderabhi/sevis-common"
-EUREKA_REPO="https://github.com/gliderabhi/eureka-server"
-GATEWAY_REPO="https://github.com/gliderabhi/gateway"
-USER_REPO="https://github.com/gliderabhi/user-service"
-INVENTORY_REPO="https://github.com/gliderabhi/inventory-service"
-BILLING_REPO="https://github.com/gliderabhi/billing-service"
-ORDERS_REPO="https://github.com/gliderabhi/orders-service"
+# Local project directories (for building JARs on Mac)
+COMMON_DIR="$PROJECT_ROOT/sevis-common"
+EUREKA_DIR="$PROJECT_ROOT/eureka-server"
+GATEWAY_DIR="$PROJECT_ROOT/gateway"
+USER_DIR="$PROJECT_ROOT/user-service"
+INVENTORY_DIR="$PROJECT_ROOT/inventory-service"
+BILLING_DIR="$PROJECT_ROOT/billing-service"
+ORDERS_DIR="$PROJECT_ROOT/orders-service"
 
 SSH_CMD="ssh -i $EC2_KEY -o StrictHostKeyChecking=no $EC2_USER@$EC2_HOST"

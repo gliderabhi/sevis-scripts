@@ -1,21 +1,25 @@
 #!/bin/bash
 # =============================================================
 # start-all.sh — server-side script
-# Starts all Sevis services in the correct order.
+# Starts all Sevis services in the correct order using pre-built JARs.
 # Run on the EC2 instance: bash ~/sevis/start-all.sh
 # =============================================================
 
-export JAVA_HOME=/usr/lib/jvm/java-17-amazon-corretto.x86_64
-export PATH=$JAVA_HOME/bin:$PATH
-export GRADLE_OPTS="-Xmx256m -Xms64m"
-
+JAVA=/usr/lib/jvm/java-17-amazon-corretto.x86_64/bin/java
 BASE=~/sevis
+JARS=$BASE/jars
 LOG=$BASE/logs
 mkdir -p $LOG
 
 start_service() {
     local NAME=$1
     local PID_FILE=$BASE/$NAME.pid
+    local JAR=$JARS/$NAME.jar
+
+    if [ ! -f "$JAR" ]; then
+        echo "[$NAME] JAR not found at $JAR — skipping."
+        return
+    fi
 
     if [ -f "$PID_FILE" ] && kill -0 "$(cat $PID_FILE)" 2>/dev/null; then
         echo "[$NAME] Already running (PID $(cat $PID_FILE)), skipping."
@@ -23,9 +27,7 @@ start_service() {
     fi
 
     echo "[$NAME] Starting..."
-    cd $BASE/$NAME
-    chmod +x gradlew
-    nohup ./gradlew bootRun --no-daemon > $LOG/$NAME.log 2>&1 &
+    nohup $JAVA -Xmx256m -Xms64m -jar "$JAR" --spring.profiles.active=prod > "$LOG/$NAME.log" 2>&1 &
     echo $! > $PID_FILE
     echo "[$NAME] Started (PID $!)"
 }

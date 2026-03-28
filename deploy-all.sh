@@ -1,7 +1,7 @@
 #!/bin/bash
 # =============================================================
 # deploy-all.sh
-# Pulls latest code for all services and restarts them.
+# Builds all JARs locally and deploys to EC2 in correct order.
 # Run from your local machine:  bash scripts/deploy-all.sh
 # =============================================================
 
@@ -16,27 +16,19 @@ echo "║         Target: $EC2_HOST                     ║"
 echo "╚══════════════════════════════════════════════╝"
 echo ""
 
-# ── Step 1: Pull + rebuild sevis-common ──────────────────────
-echo "[0/6] Updating sevis-common..."
-$SSH_CMD bash << ENDSSH
-set -e
-export JAVA_HOME="$JAVA_HOME"
-export PATH="\$JAVA_HOME/bin:\$PATH"
-export GRADLE_OPTS="$GRADLE_OPTS"
-
-cd "$APP_DIR/sevis-common"
-git fetch origin && git reset --hard origin/main
+# ── Step 0: Build and publish sevis-common locally ───────────
+echo "[0/6] Building sevis-common..."
+cd "$COMMON_DIR"
 ./gradlew publishToMavenLocal --no-daemon -q
-echo "sevis-common published"
-ENDSSH
+echo "sevis-common published to local Maven."
 
-# ── Step 2: Stop all running services ────────────────────────
+# ── Step 1: Stop all running services on EC2 ─────────────────
 echo ""
-echo "[*] Stopping all services..."
-$SSH_CMD bash "$APP_DIR/stop-all.sh" 2>/dev/null || true
-sleep 3
+echo "[*] Stopping all services on EC2..."
+$SSH_CMD "bash $APP_DIR/stop-all.sh" 2>/dev/null || true
+sleep 2
 
-# ── Step 3: Deploy in startup order ──────────────────────────
+# ── Step 2: Deploy in startup order ──────────────────────────
 echo ""
 echo "[1/6] Deploying Eureka Server..."
 bash "$SCRIPTS_DIR/deploy-eureka-server.sh"
