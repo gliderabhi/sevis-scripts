@@ -6,7 +6,9 @@
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
-EC2_HOST="32.194.147.195"
+
+EC2_HOST="32.194.147.195"                                    # SEVIS microservices server
+EC2_HOST_ECI="ec2-52-90-69-234.compute-1.amazonaws.com"      # ECI result analysis server
 EC2_USER="ec2-user"
 EC2_KEY="$SCRIPT_DIR/sevis.pem"
 APP_DIR="/home/ec2-user/sevis"
