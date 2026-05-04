@@ -55,12 +55,13 @@ if ! command -v pm2 &>/dev/null; then
     sudo npm install -g pm2
 fi
 
-# Install Chromium system dependencies
-echo "Installing Chromium system dependencies..."
-sudo dnf install -y alsa-lib at-spi2-atk cups-libs libdrm libXcomposite \
+# Install system dependencies (Chromium + better-sqlite3 native build)
+echo "Installing system dependencies..."
+sudo dnf install -y \
+    alsa-lib at-spi2-atk cups-libs libdrm libXcomposite \
     libXcursor libXdamage libXext libXfixes libXi libXrandr libXrender \
-    libXtst pango mesa-libgbm libxkbcommon libwayland-client \
-    libwayland-server nss 2>&1 | tail -3 || true
+    libXtst pango mesa-libgbm libxkbcommon libwayland-client libwayland-server nss \
+    python3 make gcc gcc-c++ sqlite-devel 2>&1 | tail -3 || true
 
 cd $REMOTE_DEPLOY_DIR
 
