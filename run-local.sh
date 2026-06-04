@@ -10,7 +10,14 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 LOG_DIR="$PROJECT_ROOT/local-logs"
 PID_DIR="$PROJECT_ROOT/local-pids"
 
-JAVA_HOME=$(/usr/libexec/java_home -v 21 2>/dev/null)
+# Detect JAVA_HOME: macOS → Linux → Windows (Eclipse Adoptium)
+if command -v /usr/libexec/java_home &>/dev/null; then
+  JAVA_HOME=$(/usr/libexec/java_home -v 21 2>/dev/null)
+elif [ -d "/usr/lib/jvm/java-21-openjdk-amd64" ]; then
+  JAVA_HOME="/usr/lib/jvm/java-21-openjdk-amd64"
+else
+  JAVA_HOME="/c/Program Files/Eclipse Adoptium/jdk-21.0.11.10-hotspot"
+fi
 JAVA="$JAVA_HOME/bin/java"
 
 mkdir -p "$LOG_DIR" "$PID_DIR"
