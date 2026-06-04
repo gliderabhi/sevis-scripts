@@ -1,13 +1,17 @@
 #!/bin/bash
 # =============================================================
 # run-local.sh — Start all SEVIS services locally
-# Usage: bash scripts/run-local.sh
+# Usage: bash scripts/run-local.sh [--tunnel]
 #        bash scripts/run-local.sh stop
+#
+# --tunnel  Also starts Cloudflare tunnels and injects the
+#           gateway URL into the web UI so remote laptops work.
 # =============================================================
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-LOG_DIR="$PROJECT_ROOT/local-logs"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/../sevis" && pwd)"
+PHOTOS_ROOT="$(cd "$SCRIPT_DIR/../photos" && pwd)"
+LOG_DIR="$(cd "$SCRIPT_DIR/.." && pwd)/local-logs"
 PID_DIR="$PROJECT_ROOT/local-pids"
 
 # Detect JAVA_HOME: macOS → Linux → Windows (Eclipse Adoptium)
@@ -25,7 +29,10 @@ mkdir -p "$LOG_DIR" "$PID_DIR"
 # Startup order matters — eureka first, gateway last
 SERVICES="eureka-server user-service inventory-service billing-service orders-service gateway"
 
+PHOTO_SERVICE_DIR="$PHOTOS_ROOT/photo-service"
+PHOTOS_UI_DIR="$PHOTOS_ROOT/photos-ui"
 WEB_DIR="$PROJECT_ROOT/sevis-web"
+INDEX_HTML="$WEB_DIR/src/index.html"
 
 # ── Map service name → project dir ───────────────────────────
 service_dir() {
@@ -36,13 +43,27 @@ service_dir() {
     inventory-service) echo "$PROJECT_ROOT/inventory-service" ;;
     billing-service)   echo "$PROJECT_ROOT/billing-service" ;;
     orders-service)    echo "$PROJECT_ROOT/orders-service" ;;
+    photo-service)     echo "$PHOTO_SERVICE_DIR" ;;
   esac
+}
+
+# ── Inject / remove gateway URL override in index.html ───────
+inject_api_url() {
+  local url="$1"
+  # Remove any existing injection line, then insert after <base href="/">
+  sed -i '' '/window\.__SEVIS_API_URL__/d' "$INDEX_HTML"
+  sed -i '' "s|<base href=\"/\">|<base href=\"/\">\n  <script>window.__SEVIS_API_URL__ = '$url';</script>|" "$INDEX_HTML"
+  echo "    ✓ Injected API URL: $url"
+}
+
+remove_api_url() {
+  sed -i '' '/window\.__SEVIS_API_URL__/d' "$INDEX_HTML" 2>/dev/null
 }
 
 # ── Stop ──────────────────────────────────────────────────────
 stop_all() {
   echo "Stopping all local services..."
-  for svc in $SERVICES sevis-web; do
+  for svc in $SERVICES photo-service sevis-web photos-ui tunnel-gateway tunnel-web; do
     PID_FILE="$PID_DIR/$svc.pid"
     if [ -f "$PID_FILE" ]; then
       PID=$(cat "$PID_FILE")
@@ -52,12 +73,18 @@ stop_all() {
       rm -f "$PID_FILE"
     fi
   done
+  remove_api_url
   echo "Done."
 }
 
 if [ "$1" = "stop" ]; then
   stop_all
   exit 0
+fi
+
+WITH_TUNNEL=0
+if [ "$1" = "--tunnel" ]; then
+  WITH_TUNNEL=1
 fi
 
 # ── Build sevis-common ────────────────────────────────────────
@@ -75,7 +102,7 @@ echo "    ✓ sevis-common ready"
 # ── Build all JARs ────────────────────────────────────────────
 echo ""
 echo "[1] Building all service JARs..."
-for svc in $SERVICES; do
+for svc in $SERVICES photo-service; do
   DIR="$(service_dir $svc)"
   echo "    Building $svc..."
   cd "$DIR"
@@ -120,7 +147,7 @@ for i in $(seq 1 30); do
 done
 
 # Start backend services
-for svc in user-service inventory-service billing-service orders-service; do
+for svc in user-service inventory-service billing-service orders-service photo-service; do
   start_service "$svc"
 done
 
@@ -130,9 +157,47 @@ sleep 15
 # Start gateway last
 start_service "gateway"
 
+# ── Cloudflare tunnels (optional) ────────────────────────────
+GATEWAY_TUNNEL_URL=""
+WEB_TUNNEL_URL=""
+
+if [ "$WITH_TUNNEL" = "1" ]; then
+  echo ""
+  echo "[3] Starting Cloudflare tunnels..."
+
+  # Gateway tunnel
+  nohup cloudflared tunnel --url http://localhost:8080 --logfile "$LOG_DIR/tunnel-gateway.log" > /dev/null 2>&1 &
+  echo $! > "$PID_DIR/tunnel-gateway.pid"
+
+  # Web UI tunnel
+  nohup cloudflared tunnel --url http://localhost:4200 --logfile "$LOG_DIR/tunnel-web.log" > /dev/null 2>&1 &
+  echo $! > "$PID_DIR/tunnel-web.pid"
+
+  echo "    Waiting for tunnel URLs..."
+  sleep 6
+
+  GATEWAY_TUNNEL_URL=$(grep -o 'https://[a-z0-9-]*\.trycloudflare\.com' "$LOG_DIR/tunnel-gateway.log" 2>/dev/null | head -1)
+  WEB_TUNNEL_URL=$(grep -o 'https://[a-z0-9-]*\.trycloudflare\.com' "$LOG_DIR/tunnel-web.log" 2>/dev/null | head -1)
+
+  if [ -n "$GATEWAY_TUNNEL_URL" ]; then
+    inject_api_url "$GATEWAY_TUNNEL_URL"
+    echo "    ✓ Gateway tunnel: $GATEWAY_TUNNEL_URL"
+  else
+    echo "    ✗ Could not detect gateway tunnel URL — check $LOG_DIR/tunnel-gateway.log"
+  fi
+
+  if [ -n "$WEB_TUNNEL_URL" ]; then
+    echo "    ✓ Web tunnel:     $WEB_TUNNEL_URL"
+  else
+    echo "    ✗ Could not detect web tunnel URL — check $LOG_DIR/tunnel-web.log"
+  fi
+else
+  remove_api_url
+fi
+
 # ── Start sevis-web ───────────────────────────────────────────
 echo ""
-echo "[3] Starting sevis-web..."
+echo "[4] Starting sevis-web..."
 if [ ! -d "$WEB_DIR/node_modules" ]; then
   echo "    Installing npm dependencies..."
   cd "$WEB_DIR" && npm install --silent
@@ -143,14 +208,32 @@ echo $! > "$PID_DIR/sevis-web.pid"
 echo "    ✓ sevis-web started (PID $!) → $LOG_DIR/sevis-web.log"
 
 echo ""
+echo "[5] Starting photos-ui..."
+if [ ! -d "$PHOTOS_UI_DIR/node_modules" ]; then
+  echo "    Installing npm dependencies..."
+  cd "$PHOTOS_UI_DIR" && npm install --silent
+fi
+cd "$PHOTOS_UI_DIR"
+nohup npm start > "$LOG_DIR/photos-ui.log" 2>&1 &
+echo $! > "$PID_DIR/photos-ui.pid"
+echo "    ✓ photos-ui started (PID $!) → $LOG_DIR/photos-ui.log"
+
+echo ""
 echo "╔══════════════════════════════════════════════╗"
 echo "║           All services running!              ║"
 echo "╠══════════════════════════════════════════════╣"
 echo "║  Eureka   → http://localhost:8761            ║"
 echo "║  Gateway  → http://localhost:8080            ║"
 echo "║  Web UI   → http://localhost:4200            ║"
+echo "║  Photos   → http://localhost:4201            ║"
+if [ -n "$GATEWAY_TUNNEL_URL" ]; then
+echo "╠══════════════════════════════════════════════╣"
+printf "║  Gateway  → %-32s║\n" "$GATEWAY_TUNNEL_URL"
+printf "║  Web UI   → %-32s║\n" "$WEB_TUNNEL_URL"
+echo "║  (share Web UI URL with other laptops)       ║"
+fi
 echo "╠══════════════════════════════════════════════╣"
 echo "║  Logs → $LOG_DIR"
-echo "║  Stop → bash scripts/run-local.sh stop      ║"
+echo "║  Stop → bash scripts/run-local.sh stop       ║"
 echo "╚══════════════════════════════════════════════╝"
 echo ""
