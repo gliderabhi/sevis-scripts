@@ -12,7 +12,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 SEVIS_ROOT="$PROJECT_ROOT/sevis"
 COMMON_ROOT="$PROJECT_ROOT/common"
-PHOTOS_ROOT="$PROJECT_ROOT/photos"
+PHOTOS_ROOT="/d/projects/photos"
 LOG_DIR="$PROJECT_ROOT/local-logs"
 PID_DIR="$PROJECT_ROOT/local-pids"
 

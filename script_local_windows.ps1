@@ -17,6 +17,7 @@ $ScriptDir   = Split-Path -Parent $MyInvocation.MyCommand.Path
 $ProjectRoot = Split-Path -Parent $ScriptDir
 $SevisRoot   = Join-Path $ProjectRoot "sevis"
 $CommonRoot  = Join-Path $ProjectRoot "common"
+$PhotosRoot  = "D:\projects\photos"
 $LogDir      = Join-Path $ProjectRoot "local-logs"
 $PidDir      = Join-Path $ProjectRoot "local-pids"
 
@@ -35,10 +36,11 @@ $ServiceDirs = [ordered]@{
     "inventory-service" = Join-Path $SevisRoot "inventory-service"
     "billing-service"   = Join-Path $SevisRoot "billing-service"
     "orders-service"    = Join-Path $SevisRoot "orders-service"
+    "photo-service"     = Join-Path $PhotosRoot "photo-service"
 }
 
 # Startup order (eureka first, gateway last)
-$StartOrder = @("eureka-server", "user-service", "inventory-service", "billing-service", "orders-service", "gateway")
+$StartOrder = @("eureka-server", "user-service", "inventory-service", "billing-service", "orders-service", "photo-service", "gateway")
 
 New-Item -ItemType Directory -Force -Path $LogDir | Out-Null
 New-Item -ItemType Directory -Force -Path $PidDir | Out-Null

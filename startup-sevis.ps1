@@ -7,9 +7,11 @@
 
 $ScriptDir   = Split-Path -Parent $MyInvocation.MyCommand.Path
 $ProjectRoot = Split-Path -Parent $ScriptDir
+$PhotosRoot  = "D:\projects\photos"
 $LogDir      = Join-Path $ProjectRoot "local-logs"
 $StartupLog  = Join-Path $LogDir "startup-sevis.log"
 $WebDir      = Join-Path $ProjectRoot "sevis\ui\sevis-web"
+$PhotosUiDir = Join-Path $PhotosRoot "photos-ui"
 
 New-Item -ItemType Directory -Force -Path $LogDir | Out-Null
 
@@ -59,4 +61,25 @@ $proc = Start-Process `
     -WindowStyle Hidden
 
 Log "Angular started (PID $($proc.Id)) -> http://localhost:4200"
+
+# ---------------------------------------------------------------
+# Photos UI
+# ---------------------------------------------------------------
+Log "Starting photos-ui..."
+$photosLog    = Join-Path $LogDir "photos-ui.log"
+$photosLogErr = Join-Path $LogDir "photos-ui.err"
+
+Clear-Content $photosLog    -ErrorAction SilentlyContinue
+Clear-Content $photosLogErr -ErrorAction SilentlyContinue
+
+$proc2 = Start-Process `
+    -FilePath "$PhotosUiDir\node_modules\.bin\ng.cmd" `
+    -ArgumentList "serve", "--host", "0.0.0.0", "--port", "4201" `
+    -WorkingDirectory $PhotosUiDir `
+    -RedirectStandardOutput $photosLog `
+    -RedirectStandardError  $photosLogErr `
+    -PassThru `
+    -WindowStyle Hidden
+
+Log "photos-ui started (PID $($proc2.Id)) -> http://localhost:4201"
 Log "========== SEVIS startup complete =========="
