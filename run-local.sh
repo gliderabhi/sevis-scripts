@@ -33,6 +33,7 @@ PHOTO_SERVICE_DIR="$PHOTOS_ROOT/photo-service"
 PHOTOS_UI_DIR="$PHOTOS_ROOT/photos-ui"
 WEB_DIR="$PROJECT_ROOT/sevis-web"
 INDEX_HTML="$WEB_DIR/src/index.html"
+PHOTOS_INDEX_HTML="$PHOTOS_UI_DIR/src/index.html"
 
 # ── Map service name → project dir ───────────────────────────
 service_dir() {
@@ -60,10 +61,21 @@ remove_api_url() {
   sed -i '' '/window\.__SEVIS_API_URL__/d' "$INDEX_HTML" 2>/dev/null
 }
 
+inject_photos_api_url() {
+  local url="$1"
+  sed -i '' '/window\.__PHOTOS_API_URL__/d' "$PHOTOS_INDEX_HTML"
+  sed -i '' "s|<base href=\"/\">|<base href=\"/\">\n  <script>window.__PHOTOS_API_URL__ = '$url';</script>|" "$PHOTOS_INDEX_HTML"
+  echo "    ✓ Injected Photos API URL: $url"
+}
+
+remove_photos_api_url() {
+  sed -i '' '/window\.__PHOTOS_API_URL__/d' "$PHOTOS_INDEX_HTML" 2>/dev/null
+}
+
 # ── Stop ──────────────────────────────────────────────────────
 stop_all() {
   echo "Stopping all local services..."
-  for svc in $SERVICES photo-service sevis-web photos-ui tunnel-gateway tunnel-web; do
+  for svc in $SERVICES photo-service sevis-web photos-ui tunnel-gateway tunnel-web tunnel-photos; do
     PID_FILE="$PID_DIR/$svc.pid"
     if [ -f "$PID_FILE" ]; then
       PID=$(cat "$PID_FILE")
@@ -74,6 +86,7 @@ stop_all() {
     fi
   done
   remove_api_url
+  remove_photos_api_url
   echo "Done."
 }
 
@@ -160,18 +173,24 @@ start_service "gateway"
 # ── Cloudflare tunnels (optional) ────────────────────────────
 GATEWAY_TUNNEL_URL=""
 WEB_TUNNEL_URL=""
+PHOTOS_TUNNEL_URL="https://photos.sevis.store"
 
 if [ "$WITH_TUNNEL" = "1" ]; then
   echo ""
   echo "[3] Starting Cloudflare tunnels..."
 
-  # Gateway tunnel
+  # Gateway tunnel (dynamic trycloudflare URL)
   nohup cloudflared tunnel --url http://localhost:8080 --logfile "$LOG_DIR/tunnel-gateway.log" > /dev/null 2>&1 &
   echo $! > "$PID_DIR/tunnel-gateway.pid"
 
-  # Web UI tunnel
+  # Web UI tunnel (dynamic trycloudflare URL)
   nohup cloudflared tunnel --url http://localhost:4200 --logfile "$LOG_DIR/tunnel-web.log" > /dev/null 2>&1 &
   echo $! > "$PID_DIR/tunnel-web.pid"
+
+  # Photos UI tunnel (named route: photos.sevis.store → localhost:4201)
+  nohup cloudflared tunnel --hostname photos.sevis.store --url http://localhost:4201 --logfile "$LOG_DIR/tunnel-photos.log" > /dev/null 2>&1 &
+  echo $! > "$PID_DIR/tunnel-photos.pid"
+  echo "    ✓ Photos tunnel:  $PHOTOS_TUNNEL_URL"
 
   echo "    Waiting for tunnel URLs..."
   sleep 6
@@ -181,6 +200,7 @@ if [ "$WITH_TUNNEL" = "1" ]; then
 
   if [ -n "$GATEWAY_TUNNEL_URL" ]; then
     inject_api_url "$GATEWAY_TUNNEL_URL"
+    inject_photos_api_url "$GATEWAY_TUNNEL_URL"
     echo "    ✓ Gateway tunnel: $GATEWAY_TUNNEL_URL"
   else
     echo "    ✗ Could not detect gateway tunnel URL — check $LOG_DIR/tunnel-gateway.log"
@@ -193,6 +213,7 @@ if [ "$WITH_TUNNEL" = "1" ]; then
   fi
 else
   remove_api_url
+  remove_photos_api_url
 fi
 
 # ── Start sevis-web ───────────────────────────────────────────
@@ -230,7 +251,8 @@ if [ -n "$GATEWAY_TUNNEL_URL" ]; then
 echo "╠══════════════════════════════════════════════╣"
 printf "║  Gateway  → %-32s║\n" "$GATEWAY_TUNNEL_URL"
 printf "║  Web UI   → %-32s║\n" "$WEB_TUNNEL_URL"
-echo "║  (share Web UI URL with other laptops)       ║"
+printf "║  Photos   → %-32s║\n" "$PHOTOS_TUNNEL_URL"
+echo "║  (share URLs with other laptops)             ║"
 fi
 echo "╠══════════════════════════════════════════════╣"
 echo "║  Logs → $LOG_DIR"
