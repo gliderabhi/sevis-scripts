@@ -9,7 +9,7 @@ $ScriptDir   = Split-Path -Parent $MyInvocation.MyCommand.Path
 $ProjectRoot = Split-Path -Parent $ScriptDir
 $LogDir      = Join-Path $ProjectRoot "local-logs"
 $StartupLog  = Join-Path $LogDir "startup-sevis.log"
-$WebDir      = Join-Path $ProjectRoot "ui\sevis-web"
+$WebDir      = Join-Path $ProjectRoot "sevis\ui\sevis-web"
 
 New-Item -ItemType Directory -Force -Path $LogDir | Out-Null
 

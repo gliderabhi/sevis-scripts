@@ -1,17 +1,19 @@
 #!/bin/bash
 # =============================================================
 # run-local.sh — Start all SEVIS services locally
-# Usage: bash scripts/run-local.sh [--tunnel]
-#        bash scripts/run-local.sh stop
+# Usage: bash sevis-scripts/run-local.sh [--tunnel]
+#        bash sevis-scripts/run-local.sh stop
 #
 # --tunnel  Also starts Cloudflare tunnels and injects the
 #           gateway URL into the web UI so remote laptops work.
 # =============================================================
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-PROJECT_ROOT="$(cd "$SCRIPT_DIR/../sevis" && pwd)"
-PHOTOS_ROOT="$(cd "$SCRIPT_DIR/../photos" && pwd)"
-LOG_DIR="$(cd "$SCRIPT_DIR/.." && pwd)/local-logs"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+SEVIS_ROOT="$PROJECT_ROOT/sevis"
+COMMON_ROOT="$PROJECT_ROOT/common"
+PHOTOS_ROOT="$PROJECT_ROOT/photos"
+LOG_DIR="$PROJECT_ROOT/local-logs"
 PID_DIR="$PROJECT_ROOT/local-pids"
 
 # Detect JAVA_HOME: macOS → Linux → Windows (Eclipse Adoptium)
@@ -31,19 +33,19 @@ SERVICES="eureka-server user-service inventory-service billing-service orders-se
 
 PHOTO_SERVICE_DIR="$PHOTOS_ROOT/photo-service"
 PHOTOS_UI_DIR="$PHOTOS_ROOT/photos-ui"
-WEB_DIR="$PROJECT_ROOT/sevis-web"
+WEB_DIR="$SEVIS_ROOT/ui/sevis-web"
 INDEX_HTML="$WEB_DIR/src/index.html"
 PHOTOS_INDEX_HTML="$PHOTOS_UI_DIR/src/index.html"
 
 # ── Map service name → project dir ───────────────────────────
 service_dir() {
   case "$1" in
-    eureka-server)     echo "$PROJECT_ROOT/eureka-server" ;;
-    gateway)           echo "$PROJECT_ROOT/gateway" ;;
-    user-service)      echo "$PROJECT_ROOT/user-service" ;;
-    inventory-service) echo "$PROJECT_ROOT/inventory-service" ;;
-    billing-service)   echo "$PROJECT_ROOT/billing-service" ;;
-    orders-service)    echo "$PROJECT_ROOT/orders-service" ;;
+    eureka-server)     echo "$COMMON_ROOT/eureka-server" ;;
+    gateway)           echo "$COMMON_ROOT/gateway" ;;
+    user-service)      echo "$COMMON_ROOT/user-service" ;;
+    inventory-service) echo "$SEVIS_ROOT/inventory-service" ;;
+    billing-service)   echo "$SEVIS_ROOT/billing-service" ;;
+    orders-service)    echo "$SEVIS_ROOT/orders-service" ;;
     photo-service)     echo "$PHOTO_SERVICE_DIR" ;;
   esac
 }
@@ -51,7 +53,6 @@ service_dir() {
 # ── Inject / remove gateway URL override in index.html ───────
 inject_api_url() {
   local url="$1"
-  # Remove any existing injection line, then insert after <base href="/">
   sed -i '' '/window\.__SEVIS_API_URL__/d' "$INDEX_HTML"
   sed -i '' "s|<base href=\"/\">|<base href=\"/\">\n  <script>window.__SEVIS_API_URL__ = '$url';</script>|" "$INDEX_HTML"
   echo "    ✓ Injected API URL: $url"
@@ -108,7 +109,7 @@ echo "╚═══════════════════════�
 echo ""
 
 echo "[0] Publishing sevis-common to local Maven..."
-cd "$PROJECT_ROOT/sevis-common"
+cd "$SEVIS_ROOT/sevis-common"
 JAVA_HOME=$JAVA_HOME ./gradlew publishToMavenLocal --no-daemon -q
 echo "    ✓ sevis-common ready"
 
@@ -148,7 +149,6 @@ start_service() {
   echo "    ✓ $svc started (PID $!) → $log"
 }
 
-# Start eureka first and wait for it to be ready
 start_service "eureka-server"
 echo "    Waiting for Eureka to be ready..."
 for i in $(seq 1 30); do
@@ -159,7 +159,6 @@ for i in $(seq 1 30); do
   sleep 1
 done
 
-# Start backend services
 for svc in user-service inventory-service billing-service orders-service photo-service; do
   start_service "$svc"
 done
@@ -167,7 +166,6 @@ done
 echo "    Waiting 15s for services to register with Eureka..."
 sleep 15
 
-# Start gateway last
 start_service "gateway"
 
 # ── Cloudflare tunnels (optional) ────────────────────────────
@@ -179,15 +177,12 @@ if [ "$WITH_TUNNEL" = "1" ]; then
   echo ""
   echo "[3] Starting Cloudflare tunnels..."
 
-  # Gateway tunnel (dynamic trycloudflare URL)
   nohup cloudflared tunnel --url http://localhost:8080 --logfile "$LOG_DIR/tunnel-gateway.log" > /dev/null 2>&1 &
   echo $! > "$PID_DIR/tunnel-gateway.pid"
 
-  # Web UI tunnel (dynamic trycloudflare URL)
   nohup cloudflared tunnel --url http://localhost:4200 --logfile "$LOG_DIR/tunnel-web.log" > /dev/null 2>&1 &
   echo $! > "$PID_DIR/tunnel-web.pid"
 
-  # Photos UI tunnel (named route: photos.sevis.store → localhost:4201)
   nohup cloudflared tunnel --hostname photos.sevis.store --url http://localhost:4201 --logfile "$LOG_DIR/tunnel-photos.log" > /dev/null 2>&1 &
   echo $! > "$PID_DIR/tunnel-photos.pid"
   echo "    ✓ Photos tunnel:  $PHOTOS_TUNNEL_URL"
@@ -256,6 +251,6 @@ echo "║  (share URLs with other laptops)             ║"
 fi
 echo "╠══════════════════════════════════════════════╣"
 echo "║  Logs → $LOG_DIR"
-echo "║  Stop → bash scripts/run-local.sh stop       ║"
+echo "║  Stop → bash sevis-scripts/run-local.sh stop ║"
 echo "╚══════════════════════════════════════════════╝"
 echo ""

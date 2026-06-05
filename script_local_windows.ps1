@@ -15,7 +15,8 @@ param([string]$Action = "")
 
 $ScriptDir   = Split-Path -Parent $MyInvocation.MyCommand.Path
 $ProjectRoot = Split-Path -Parent $ScriptDir
-$CommonRoot  = Join-Path (Split-Path -Parent $ProjectRoot) "common"
+$SevisRoot   = Join-Path $ProjectRoot "sevis"
+$CommonRoot  = Join-Path $ProjectRoot "common"
 $LogDir      = Join-Path $ProjectRoot "local-logs"
 $PidDir      = Join-Path $ProjectRoot "local-pids"
 
@@ -31,9 +32,9 @@ $ServiceDirs = [ordered]@{
     "eureka-server"     = Join-Path $CommonRoot "eureka-server"
     "gateway"           = Join-Path $CommonRoot "gateway"
     "user-service"      = Join-Path $CommonRoot "user-service"
-    "inventory-service" = Join-Path $ProjectRoot "inventory-service"
-    "billing-service"   = Join-Path $ProjectRoot "billing-service"
-    "orders-service"    = Join-Path $ProjectRoot "orders-service"
+    "inventory-service" = Join-Path $SevisRoot "inventory-service"
+    "billing-service"   = Join-Path $SevisRoot "billing-service"
+    "orders-service"    = Join-Path $SevisRoot "orders-service"
 }
 
 # Startup order (eureka first, gateway last)
@@ -217,7 +218,7 @@ $env:JAVA_HOME = $JavaHome
 Write-Host ""
 Write-Host "Checking for changes..."
 
-$commonDir     = Join-Path $ProjectRoot "sevis-common"
+$commonDir     = Join-Path $SevisRoot "sevis-common"
 $commonNewest  = Get-NewestSourceTime $commonDir
 $rebuildCommon = $false
 $toBuild       = [System.Collections.Generic.List[string]]::new()
