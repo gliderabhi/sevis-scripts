@@ -17,7 +17,7 @@ $ScriptDir   = Split-Path -Parent $MyInvocation.MyCommand.Path
 $ProjectRoot = Split-Path -Parent $ScriptDir
 $SevisRoot   = Join-Path $ProjectRoot "sevis"
 $CommonRoot  = Join-Path $ProjectRoot "common"
-$PhotosRoot  = "D:\projects\photos"
+$PhotosRoot  = Join-Path $ProjectRoot "photos"
 $LogDir      = Join-Path $ProjectRoot "local-logs"
 $PidDir      = Join-Path $ProjectRoot "local-pids"
 
