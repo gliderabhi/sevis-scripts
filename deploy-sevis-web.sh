@@ -7,7 +7,7 @@
 set -euo pipefail
 source "$(dirname "$0")/config.sh"
 
-WEB_SOURCE="$PROJECT_ROOT/sevis-web"
+WEB_SOURCE="$PROJECT_ROOT/retail/ui/sevis-web"
 REMOTE_WEB_DIR="$APP_DIR/sevis-web"
 WEB_PORT=80
 

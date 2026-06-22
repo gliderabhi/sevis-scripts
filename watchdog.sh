@@ -115,4 +115,13 @@ if ! is_alive "sevis-web"; then
     log "STARTED sevis-web (PID $!)"
 fi
 
+# 5. photos-ui (ng serve --port 4201) — restart if dead
+if ! is_alive "photos-ui"; then
+    log "DOWN: photos-ui — restarting"
+    PHOTOS_UI_DIR="$PROJECT_ROOT/photos/photos-ui/web"
+    nohup npm --prefix "$PHOTOS_UI_DIR" start >> "$LOG_DIR/photos-ui.log" 2>&1 &
+    echo $! > "$PID_DIR/photos-ui.pid"
+    log "STARTED photos-ui (PID $!)"
+fi
+
 log "Watchdog check complete"

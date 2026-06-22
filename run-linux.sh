@@ -32,12 +32,16 @@ JAVA="$JAVA_HOME/bin/java"
 
 SEVIS_SERVICES="eureka-server user-service inventory-service billing-service orders-service gateway"
 PHOTO_SERVICE_DIR="$PHOTOS_ROOT/photo-service"
-PHOTOS_UI_DIR="$PHOTOS_ROOT/photos-ui"
+PHOTOS_UI_DIR="$PHOTOS_ROOT/photos-ui/web"
 WEB_DIR="$SEVIS_ROOT/ui/sevis-web"
+KIDS_STUDY_SERVICE_DIR="$PROJECT_ROOT/kids-study/service"
+KIDS_STUDY_UI_DIR="$PROJECT_ROOT/kids-study/ui"
+SONGS_SERVICE_DIR="$PROJECT_ROOT/songs/songs-service"
+SONGS_UI_DIR="$PROJECT_ROOT/songs/ui/songs-web"
 INDEX_HTML="$WEB_DIR/src/index.html"
 PHOTOS_INDEX_HTML="$PHOTOS_UI_DIR/src/index.html"
 
-ALL_PROCESSES="eureka-server user-service inventory-service billing-service orders-service photo-service gateway sevis-web photos-ui tunnel-gateway tunnel-web tunnel-photos"
+ALL_PROCESSES="eureka-server user-service inventory-service billing-service orders-service photo-service gateway sevis-web photos-ui kids-study-service kids-study-ui songs-service songs-ui tunnel-gateway tunnel-web tunnel-photos"
 
 mkdir -p "$LOG_DIR" "$PID_DIR"
 
@@ -51,7 +55,9 @@ service_dir() {
     inventory-service) echo "$SEVIS_ROOT/inventory-service" ;;
     billing-service)   echo "$SEVIS_ROOT/billing-service" ;;
     orders-service)    echo "$SEVIS_ROOT/orders-service" ;;
-    photo-service)     echo "$PHOTO_SERVICE_DIR" ;;
+    photo-service)         echo "$PHOTO_SERVICE_DIR" ;;
+    kids-study-service)    echo "$KIDS_STUDY_SERVICE_DIR" ;;
+    songs-service)         echo "$SONGS_SERVICE_DIR" ;;
   esac
 }
 
@@ -159,7 +165,7 @@ if [ "$SKIP_BUILD" = "0" ]; then
 
   echo ""
   echo "[1] Building all service JARs..."
-  for svc in $SEVIS_SERVICES photo-service; do
+  for svc in $SEVIS_SERVICES photo-service kids-study-service songs-service; do
     local_dir="$(service_dir "$svc")"
     if [ -z "$local_dir" ] || [ ! -d "$local_dir" ]; then
       echo "    ⚠ Skipping $svc — directory not found"
@@ -217,7 +223,7 @@ for i in $(seq 1 40); do
   sleep 1
 done
 
-for svc in user-service inventory-service billing-service orders-service photo-service; do
+for svc in user-service inventory-service billing-service orders-service photo-service kids-study-service songs-service; do
   start_java_service "$svc"
 done
 
@@ -304,8 +310,10 @@ start_ui() {
   echo "    ✓ $name started (PID $!) → $LOG_DIR/$name.log"
 }
 
-start_ui "sevis-web"  "$WEB_DIR"      4 4200
-start_ui "photos-ui"  "$PHOTOS_UI_DIR" 5 4201
+start_ui "sevis-web"     "$WEB_DIR"           4 4200
+start_ui "photos-ui"     "$PHOTOS_UI_DIR"     5 4201
+start_ui "kids-study-ui" "$KIDS_STUDY_UI_DIR" 6 3010
+start_ui "songs-ui"      "$SONGS_UI_DIR"      7 4202
 
 # ── Summary ───────────────────────────────────────────────────
 
@@ -317,6 +325,8 @@ echo "║  Eureka   → http://localhost:8761            ║"
 echo "║  Gateway  → http://localhost:8080            ║"
 echo "║  SEVIS UI → http://localhost:4200            ║"
 echo "║  Photos   → http://localhost:4201            ║"
+echo "║  Kids App → http://localhost:3010            ║"
+echo "║  Songs    → http://localhost:4202            ║"
 if [ -n "$GATEWAY_TUNNEL_URL" ]; then
 echo "╠══════════════════════════════════════════════╣"
 printf "║  Gateway  → %-32s║\n" "$GATEWAY_TUNNEL_URL"
