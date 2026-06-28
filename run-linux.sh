@@ -15,6 +15,7 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 SEVIS_ROOT="$PROJECT_ROOT/sevis"
 COMMON_ROOT="$PROJECT_ROOT/common"
 PHOTOS_ROOT="$PROJECT_ROOT/photos"
+STREAM_ROOT="$PROJECT_ROOT/stream"
 LOG_DIR="$PROJECT_ROOT/local-logs"
 PID_DIR="$PROJECT_ROOT/local-pids"
 
@@ -38,10 +39,12 @@ KIDS_STUDY_SERVICE_DIR="$PROJECT_ROOT/kids-study/service"
 KIDS_STUDY_UI_DIR="$PROJECT_ROOT/kids-study/ui"
 SONGS_SERVICE_DIR="$PROJECT_ROOT/songs/songs-service"
 SONGS_UI_DIR="$PROJECT_ROOT/songs/ui/songs-web"
+STREAM_SERVICE_DIR="$STREAM_ROOT/stream-service"
+STREAM_UI_DIR="$STREAM_ROOT/stream-ui"
 INDEX_HTML="$WEB_DIR/src/index.html"
 PHOTOS_INDEX_HTML="$PHOTOS_UI_DIR/src/index.html"
 
-ALL_PROCESSES="eureka-server user-service inventory-service billing-service orders-service photo-service gateway sevis-web photos-ui kids-study-service kids-study-ui songs-service songs-ui tunnel-gateway tunnel-web tunnel-photos"
+ALL_PROCESSES="eureka-server user-service inventory-service billing-service orders-service photo-service gateway sevis-web photos-ui kids-study-service kids-study-ui stream-service tunnel-gateway tunnel-web tunnel-photos"
 
 mkdir -p "$LOG_DIR" "$PID_DIR"
 
@@ -57,7 +60,7 @@ service_dir() {
     orders-service)    echo "$SEVIS_ROOT/orders-service" ;;
     photo-service)         echo "$PHOTO_SERVICE_DIR" ;;
     kids-study-service)    echo "$KIDS_STUDY_SERVICE_DIR" ;;
-    songs-service)         echo "$SONGS_SERVICE_DIR" ;;
+    stream-service)        echo "$STREAM_SERVICE_DIR" ;;
   esac
 }
 
@@ -165,7 +168,7 @@ if [ "$SKIP_BUILD" = "0" ]; then
 
   echo ""
   echo "[1] Building all service JARs..."
-  for svc in $SEVIS_SERVICES photo-service kids-study-service songs-service; do
+  for svc in $SEVIS_SERVICES photo-service kids-study-service stream-service; do
     local_dir="$(service_dir "$svc")"
     if [ -z "$local_dir" ] || [ ! -d "$local_dir" ]; then
       echo "    ⚠ Skipping $svc — directory not found"
@@ -223,9 +226,39 @@ for i in $(seq 1 40); do
   sleep 1
 done
 
-for svc in user-service inventory-service billing-service orders-service photo-service kids-study-service songs-service; do
+for svc in user-service inventory-service billing-service orders-service photo-service kids-study-service; do
   start_java_service "$svc"
 done
+
+# aria2c RPC daemon — required for magnet/torrent downloads
+if pgrep -x aria2c > /dev/null; then
+  echo "    ⚠ aria2c already running — skipping"
+else
+  BT_TRACKERS="http://nyaa.tracker.wf:7777/announce,https://tracker.gbitt.info/announce,http://tracker.bt4g.com:2095/announce,https://tracker.tamersunion.org:443/announce,udp://tracker.opentrackr.org:1337/announce,udp://open.demonii.com:1337/announce,udp://open.stealth.si:80/announce,udp://tracker.torrent.eu.org:451/announce,udp://explodie.org:6969/announce,udp://exodus.desync.com:6969/announce"
+  aria2c --enable-rpc --rpc-listen-all=false --rpc-listen-port=6800 --rpc-secret=stream-secret \
+    --dir=/mnt/sdb1/videos/raw --seed-time=0 --max-concurrent-downloads=5 \
+    --file-allocation=none --continue=true \
+    --enable-dht=true --dht-listen-port=6881 \
+    --bt-enable-lpd=true --enable-peer-exchange=true \
+    --bt-tracker="$BT_TRACKERS" \
+    --bt-max-peers=100 \
+    --daemon=true --log="$LOG_DIR/aria2c.log" --log-level=warn
+  echo "    ✓ aria2c started (RPC → localhost:6800)"
+fi
+
+# stream-service gets more heap since it manages async transcoding jobs
+if is_running "stream-service"; then
+  echo "    ⚠ stream-service already running (PID $(cat "$PID_DIR/stream-service.pid")) — skipping"
+else
+  jar=$(ls "$STREAM_SERVICE_DIR/build/libs/"*.jar 2>/dev/null | grep -v plain | head -1)
+  if [ -n "$jar" ]; then
+    nohup "$JAVA" -Xmx512m -Xms128m -jar "$jar" > "$LOG_DIR/stream-service.log" 2>&1 &
+    echo $! > "$PID_DIR/stream-service.pid"
+    echo "    ✓ stream-service started (PID $!) → $LOG_DIR/stream-service.log"
+  else
+    echo "    ✗ No JAR found for stream-service"
+  fi
+fi
 
 echo "    Waiting 15s for services to register with Eureka..."
 sleep 15
@@ -273,47 +306,63 @@ else
   remove_photos_api_url
 fi
 
-# ── Start Angular UIs ─────────────────────────────────────────
+# ── Start Angular UIs (static builds via serve-spa.js) ────────
 
-start_ui() {
+SERVE_SCRIPT="$SCRIPT_DIR/serve-spa.js"
+
+build_ui() {
   local name="$1"
   local dir="$2"
-  local step="$3"
-  local port="$4"
+  echo "    Building $name..."
+  cd "$dir" && npx ng build --configuration production -q
+  if [ $? -ne 0 ]; then
+    echo "    ✗ Build failed for $name"
+    return 1
+  fi
+  echo "    ✓ $name built"
+}
+
+start_static_ui() {
+  local name="$1"
+  local dist="$2"
+  local port="$3"
+  local prefixes="$4"
+  local step="$5"
 
   echo ""
-  echo "[$step] Starting $name (port $port)..."
+  echo "[$step] Starting $name (static, port $port)..."
 
   if is_running "$name"; then
     echo "    ⚠ $name already running (PID $(cat "$PID_DIR/$name.pid")) — skipping"
     return 0
   fi
 
-  if [ ! -d "$dir" ]; then
-    echo "    ✗ $name directory not found: $dir"
+  if [ ! -d "$dist" ]; then
+    echo "    ✗ dist not found: $dist — run with build first"
     return 1
   fi
 
-  # Clean reinstall if rollup Linux native module is missing (common after cross-OS checkout)
-  if [ ! -d "$dir/node_modules" ] || ! ls "$dir/node_modules/@rollup/rollup-linux-x64-gnu" &>/dev/null; then
-    if [ -d "$dir/node_modules" ]; then
-      echo "    Rollup Linux native module missing — cleaning node_modules..."
-      rm -rf "$dir/node_modules" "$dir/package-lock.json"
-    fi
-    echo "    Installing npm dependencies for $name..."
-    cd "$dir" && npm install --silent
-  fi
-
-  cd "$dir"
-  nohup npm start > "$LOG_DIR/$name.log" 2>&1 &
+  nohup node "$SERVE_SCRIPT" "$dist" "$port" "$prefixes" \
+    > "$LOG_DIR/$name.log" 2>&1 &
   echo $! > "$PID_DIR/$name.pid"
   echo "    ✓ $name started (PID $!) → $LOG_DIR/$name.log"
 }
 
-start_ui "sevis-web"     "$WEB_DIR"           4 4200
-start_ui "photos-ui"     "$PHOTOS_UI_DIR"     5 4201
-start_ui "kids-study-ui" "$KIDS_STUDY_UI_DIR" 6 3010
-start_ui "songs-ui"      "$SONGS_UI_DIR"      7 4202
+if [ "$SKIP_BUILD" = "0" ]; then
+  echo ""
+  echo "[4] Building Angular UIs..."
+  build_ui "sevis-web"     "$WEB_DIR"
+  build_ui "photos-ui"     "$PHOTOS_UI_DIR"
+  build_ui "kids-study-ui" "$KIDS_STUDY_UI_DIR"
+  build_ui "stream-ui"     "$STREAM_UI_DIR"
+  echo "    ↳ stream-ui served by Nginx on port 3021 (dist rebuilt above)"
+else
+  echo "[4] Skipping UI build (--skip-build)"
+fi
+
+start_static_ui "sevis-web"     "$WEB_DIR/dist/sevis-web/browser"          4200 "/user-service,/orders-service,/inventory-service,/billing-service" 5
+start_static_ui "photos-ui"     "$PHOTOS_UI_DIR/dist/photos-ui/browser"    4201 "/user-service,/photo-service"                                     6
+start_static_ui "kids-study-ui" "$KIDS_STUDY_UI_DIR/dist/kids-study/browser" 3010 "/kids-study-service"                                           7
 
 # ── Summary ───────────────────────────────────────────────────
 
@@ -326,7 +375,7 @@ echo "║  Gateway  → http://localhost:8080            ║"
 echo "║  SEVIS UI → http://localhost:4200            ║"
 echo "║  Photos   → http://localhost:4201            ║"
 echo "║  Kids App → http://localhost:3010            ║"
-echo "║  Songs    → http://localhost:4202            ║"
+echo "║  Stream   → http://localhost:3021            ║"
 if [ -n "$GATEWAY_TUNNEL_URL" ]; then
 echo "╠══════════════════════════════════════════════╣"
 printf "║  Gateway  → %-32s║\n" "$GATEWAY_TUNNEL_URL"
