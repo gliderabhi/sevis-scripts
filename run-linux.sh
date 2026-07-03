@@ -328,6 +328,7 @@ start_static_ui() {
   local port="$3"
   local prefixes="$4"
   local step="$5"
+  local routes="$6"
 
   echo ""
   echo "[$step] Starting $name (static, port $port)..."
@@ -342,7 +343,7 @@ start_static_ui() {
     return 1
   fi
 
-  nohup node "$SERVE_SCRIPT" "$dist" "$port" "$prefixes" \
+  nohup node "$SERVE_SCRIPT" "$dist" "$port" "$prefixes" "$routes" \
     > "$LOG_DIR/$name.log" 2>&1 &
   echo $! > "$PID_DIR/$name.pid"
   echo "    ✓ $name started (PID $!) → $LOG_DIR/$name.log"
@@ -361,8 +362,8 @@ else
 fi
 
 start_static_ui "sevis-web"     "$WEB_DIR/dist/sevis-web/browser"          4200 "/user-service,/orders-service,/inventory-service,/billing-service" 5
-start_static_ui "photos-ui"     "$PHOTOS_UI_DIR/dist/photos-ui/browser"    4201 "/user-service,/photo-service"                                     6
-start_static_ui "kids-study-ui" "$KIDS_STUDY_UI_DIR/dist/kids-study/browser" 3010 "/kids-study-service"                                           7
+start_static_ui "photos-ui"     "$PHOTOS_UI_DIR/dist/photos-ui/browser"    4201 "/user-service,/photo-service,/stream-service"                     6
+start_static_ui "kids-study-ui" "$KIDS_STUDY_UI_DIR/dist/kids-study/browser" 3010 "/kids-study-service" 7 "/sitemap.xml=/kids-study-service/sitemap.xml"
 
 # ── Summary ───────────────────────────────────────────────────
 

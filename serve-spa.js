@@ -3,13 +3,16 @@
  * serve-spa.js — Lightweight SPA static server with API proxy
  *
  * Usage:
- *   node serve-spa.js <dist-dir> <port> <api-prefixes-csv>
+ *   node serve-spa.js <dist-dir> <port> <api-prefixes-csv> [exact-route-rewrites-csv]
  *
  * Example:
  *   node serve-spa.js /path/to/dist/sevis-web 4200 /user-service,/orders-service
+ *   node serve-spa.js /path/to/dist/kids-study 3010 /kids-study-service /sitemap.xml=/kids-study-service/sitemap.xml
  *
  * - Serves static files from <dist-dir>
  * - Proxies any path starting with a prefix to http://localhost:8080
+ * - Exact-route rewrites proxy a single path to a different gateway path
+ *   (e.g. exposing a backend's /sitemap.xml at the site root)
  * - Falls back to index.html for all other paths (SPA routing)
  */
 
@@ -22,6 +25,10 @@ const path = require('path');
 const DIST_DIR   = path.resolve(process.argv[2] || 'dist');
 const PORT       = parseInt(process.argv[3] || '4200', 10);
 const PREFIXES   = (process.argv[4] || '').split(',').map(s => s.trim()).filter(Boolean);
+const ROUTE_REWRITES = new Map(
+  (process.argv[5] || '').split(',').map(s => s.trim()).filter(Boolean)
+    .map(pair => pair.split('=').map(s => s.trim()))
+);
 const GATEWAY    = 'http://localhost:8080';
 const BIND_HOST  = '127.0.0.1';
 
@@ -48,12 +55,12 @@ const MIME_TYPES = {
 };
 
 // ── Proxy a request to the gateway ───────────────────────────────────────────
-function proxyToGateway(req, res) {
+function proxyToGateway(req, res, targetPath) {
   const gwUrl  = new URL(GATEWAY);
   const options = {
     hostname : gwUrl.hostname,
     port     : parseInt(gwUrl.port, 10) || 8080,
-    path     : req.url,
+    path     : targetPath || req.url,
     method   : req.method,
     headers  : Object.assign({}, req.headers, { host: gwUrl.host }),
   };
@@ -88,12 +95,17 @@ function serveFile(filePath, res) {
 const server = http.createServer((req, res) => {
   const reqPath = req.url.split('?')[0];
 
-  // 1. Proxy API prefixes to gateway
+  // 1. Exact-route rewrites (e.g. /sitemap.xml -> /kids-study-service/sitemap.xml)
+  if (ROUTE_REWRITES.has(reqPath)) {
+    return proxyToGateway(req, res, ROUTE_REWRITES.get(reqPath));
+  }
+
+  // 2. Proxy API prefixes to gateway
   if (PREFIXES.some(p => reqPath === p || reqPath.startsWith(p + '/'))) {
     return proxyToGateway(req, res);
   }
 
-  // 2. Try to serve the exact static file requested
+  // 3. Try to serve the exact static file requested
   let candidate = path.join(DIST_DIR, reqPath);
 
   // Prevent path traversal
@@ -114,7 +126,7 @@ const server = http.createServer((req, res) => {
     }
   }
 
-  // 3. SPA fallback — return root index.html for Angular routing
+  // 4. SPA fallback — return root index.html for Angular routing
   const indexHtml = path.join(DIST_DIR, 'index.html');
   if (fs.existsSync(indexHtml)) {
     return serveFile(indexHtml, res);

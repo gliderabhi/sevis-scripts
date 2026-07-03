@@ -14,6 +14,7 @@ SEVIS_ROOT="$PROJECT_ROOT/sevis"
 COMMON_ROOT="$PROJECT_ROOT/common"
 PHOTOS_ROOT="$PROJECT_ROOT/photos"
 KIDS_ROOT="$PROJECT_ROOT/kids-study"
+STREAM_ROOT="$PROJECT_ROOT/stream"
 LOG_DIR="$PROJECT_ROOT/local-logs"
 PID_DIR="$PROJECT_ROOT/local-pids"
 JAVA="/usr/lib/jvm/java-21-openjdk-amd64/bin/java"
@@ -35,6 +36,7 @@ jar_for() {
         orders-service)     echo "$SEVIS_ROOT/orders-service/build/libs/orders-service-0.0.1-SNAPSHOT.jar" ;;
         photo-service)      echo "$PHOTOS_ROOT/photo-service/build/libs/photo-service-0.0.1-SNAPSHOT.jar" ;;
         kids-study-service) echo "$KIDS_ROOT/service/build/libs/kids-study-service-0.0.1-SNAPSHOT.jar" ;;
+        stream-service)     echo "$STREAM_ROOT/stream-service/build/libs/stream-service-0.0.1-SNAPSHOT.jar" ;;
     esac
 }
 
@@ -191,7 +193,32 @@ if ! http_ok "http://localhost:3010"; then
     log "STARTED kids-study-ui (PID $!)"
 fi
 
-# ── 7. Systemd-managed services ───────────────────────────────
+# ── 7. aria2c RPC (required for stream-service torrent downloads) ─
+if ! pgrep -x aria2c > /dev/null; then
+    log "DOWN: aria2c — restarting"
+    BT_TRACKERS="http://nyaa.tracker.wf:7777/announce,https://tracker.gbitt.info/announce,http://tracker.bt4g.com:2095/announce,udp://tracker.opentrackr.org:1337/announce,udp://open.demonii.com:1337/announce,udp://open.stealth.si:80/announce,udp://tracker.torrent.eu.org:451/announce,udp://explodie.org:6969/announce,udp://exodus.desync.com:6969/announce"
+    aria2c --enable-rpc --rpc-listen-all=false --rpc-listen-port=6800 --rpc-secret=stream-secret \
+        --dir=/mnt/sdb1/videos/raw --seed-time=0 --max-concurrent-downloads=5 \
+        --file-allocation=none --continue=true \
+        --enable-dht=true --dht-listen-port=6881 \
+        --bt-enable-lpd=true --enable-peer-exchange=true \
+        --bt-tracker="$BT_TRACKERS" --bt-max-peers=100 \
+        --daemon=true --log="$LOG_DIR/aria2c.log" --log-level=warn
+    log "STARTED aria2c (RPC → localhost:6800)"
+fi
+
+# ── 8. stream-service ─────────────────────────────────────────
+if ! java_running "stream-service" || ! http_ok "http://localhost:8095/api/videos"; then
+    log "DOWN: stream-service — restarting"
+    STREAM_JAR=$(jar_for "stream-service")
+    pkill -f "$STREAM_JAR" 2>/dev/null || true
+    sleep 1
+    nohup "$JAVA" -Xmx512m -Xms128m -jar "$STREAM_JAR" >> "$LOG_DIR/stream-service.log" 2>&1 &
+    echo $! > "$PID_DIR/stream-service.pid"
+    log "STARTED stream-service (PID $!)"
+fi
+
+# ── 9. Systemd-managed services ───────────────────────────────
 ensure_systemd_service "eci-results.service"       "http://localhost:3000"
 ensure_systemd_service "yt-dlp-downloader.service" "http://localhost:5050"
 ensure_systemd_service "sevis-portal.service"      "http://localhost:5051"
