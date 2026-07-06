@@ -2,7 +2,7 @@
 # =============================================================
 # watchdog.sh — Health-check and restart dead SEVIS services
 # Runs every 5 minutes via systemd timer (sevis-watchdog.timer)
-# Checks: process running (by JAR path) + HTTP health endpoint
+# Checks: process running (by JAR basename) + HTTP health endpoint
 # Startup order: eureka → core services → gateway → UIs
 # =============================================================
 
@@ -40,7 +40,13 @@ jar_for() {
     esac
 }
 
-# ── Check if a Java service process is running (by JAR path) ─
+# ── Check if a Java service process is running (by JAR name) ─
+# Matches on the JAR's basename, not full path, since services are
+# sometimes started with a relative path (cwd-dependent) — matching
+# the full absolute path would miss those and let duplicates/stale
+# processes linger uncaught (this is what caused the gateway crash
+# loop: a relative-path instance held port 8080 that pkill -f on the
+# absolute path could never find).
 # Also syncs the PID file if it was stale.
 java_running() {
     local svc="$1"
@@ -48,7 +54,7 @@ java_running() {
     jar=$(jar_for "$svc")
     [ -z "$jar" ] && return 1
     local pid
-    pid=$(pgrep -f "$jar" 2>/dev/null | head -1)
+    pid=$(pgrep -f "$(basename "$jar")" 2>/dev/null | head -1)
     if [ -n "$pid" ]; then
         echo "$pid" > "$PID_DIR/$svc.pid"   # keep PID file fresh
         return 0
@@ -77,12 +83,34 @@ http_ok() {
 }
 
 # ── Kill any running instance of a JAR before restarting ─────
+# Matches by basename (see java_running) and waits for the process to
+# actually exit — not just a fixed sleep — before returning, so
+# start_java_service never races a still-shutting-down instance for
+# the port (Spring Boot's Eureka deregistration on shutdown can take
+# several seconds, longer than a flat 1s sleep covers).
 kill_java_service() {
     local svc="$1"
     local jar
     jar=$(jar_for "$svc")
-    pkill -f "$jar" 2>/dev/null || true
-    sleep 1
+    local jar_name
+    jar_name=$(basename "$jar")
+    local pids
+    pids=$(pgrep -f "$jar_name" 2>/dev/null)
+    if [ -n "$pids" ]; then
+        log "Killing existing $svc PID(s): $pids"
+        kill $pids 2>/dev/null || true
+        for _ in $(seq 1 15); do
+            pids=$(pgrep -f "$jar_name" 2>/dev/null)
+            [ -z "$pids" ] && break
+            sleep 1
+        done
+        pids=$(pgrep -f "$jar_name" 2>/dev/null)
+        if [ -n "$pids" ]; then
+            log "$svc still alive after 15s — force killing: $pids"
+            kill -9 $pids 2>/dev/null || true
+            sleep 1
+        fi
+    fi
     rm -f "$PID_DIR/$svc.pid"
 }
 
@@ -211,8 +239,7 @@ fi
 if ! java_running "stream-service" || ! http_ok "http://localhost:8095/api/videos"; then
     log "DOWN: stream-service — restarting"
     STREAM_JAR=$(jar_for "stream-service")
-    pkill -f "$STREAM_JAR" 2>/dev/null || true
-    sleep 1
+    kill_java_service "stream-service"
     nohup "$JAVA" -Xmx512m -Xms128m -jar "$STREAM_JAR" >> "$LOG_DIR/stream-service.log" 2>&1 &
     echo $! > "$PID_DIR/stream-service.pid"
     log "STARTED stream-service (PID $!)"
@@ -222,5 +249,6 @@ fi
 ensure_systemd_service "eci-results.service"       "http://localhost:3000"
 ensure_systemd_service "yt-dlp-downloader.service" "http://localhost:5050"
 ensure_systemd_service "sevis-portal.service"      "http://localhost:5051"
+ensure_systemd_service "jackett.service"           "http://localhost:9117"
 
 log "--- Watchdog check complete ---"
