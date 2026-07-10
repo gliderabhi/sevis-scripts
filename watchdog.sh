@@ -15,6 +15,8 @@ COMMON_ROOT="$PROJECT_ROOT/common"
 PHOTOS_ROOT="$PROJECT_ROOT/photos"
 KIDS_ROOT="$PROJECT_ROOT/kids-study"
 STREAM_ROOT="$PROJECT_ROOT/stream"
+ROOMLIST_ROOT="$PROJECT_ROOT/roomlist"
+ROOMLIST_UI_DIR="$ROOMLIST_ROOT/roomlist-ui/web"
 LOG_DIR="$PROJECT_ROOT/local-logs"
 PID_DIR="$PROJECT_ROOT/local-pids"
 JAVA="/usr/lib/jvm/java-21-openjdk-amd64/bin/java"
@@ -37,6 +39,7 @@ jar_for() {
         photo-service)      echo "$PHOTOS_ROOT/photo-service/build/libs/photo-service-0.0.1-SNAPSHOT.jar" ;;
         kids-study-service) echo "$KIDS_ROOT/service/build/libs/kids-study-service-0.0.1-SNAPSHOT.jar" ;;
         stream-service)     echo "$STREAM_ROOT/stream-service/build/libs/stream-service-0.0.1-SNAPSHOT.jar" ;;
+        listing-service)    echo "$ROOMLIST_ROOT/listing-service/build/libs/listing-service-0.0.1-SNAPSHOT.jar" ;;
     esac
 }
 
@@ -171,7 +174,7 @@ if ! java_running "eureka-server" || ! http_ok "http://localhost:8761/actuator/h
 fi
 
 # ── 2. Core Java services ─────────────────────────────────────
-for svc in user-service inventory-service billing-service orders-service photo-service kids-study-service; do
+for svc in user-service inventory-service billing-service orders-service photo-service kids-study-service listing-service; do
     if ! java_running "$svc"; then
         log "DOWN: $svc — restarting"
         start_java_service "$svc"
@@ -209,6 +212,16 @@ if ! http_ok "http://localhost:4201"; then
     nohup npm --prefix "$PHOTOS_ROOT/photos-ui/web" start >> "$LOG_DIR/photos-ui.log" 2>&1 &
     echo $! > "$PID_DIR/photos-ui.pid"
     log "STARTED photos-ui (PID $!)"
+fi
+
+# ── 5b. roomlist-ui (Angular :4202) ───────────────────────────
+if ! http_ok "http://localhost:4202"; then
+    log "DOWN: roomlist-ui — restarting"
+    pkill -f "ng serve --port 4202" 2>/dev/null || true
+    sleep 1
+    nohup npm --prefix "$ROOMLIST_UI_DIR" start >> "$LOG_DIR/roomlist-ui.log" 2>&1 &
+    echo $! > "$PID_DIR/roomlist-ui.pid"
+    log "STARTED roomlist-ui (PID $!)"
 fi
 
 # ── 6. kids-study-ui (Angular :3010) ──────────────────────────

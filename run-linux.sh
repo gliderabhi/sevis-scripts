@@ -16,6 +16,7 @@ SEVIS_ROOT="$PROJECT_ROOT/sevis"
 COMMON_ROOT="$PROJECT_ROOT/common"
 PHOTOS_ROOT="$PROJECT_ROOT/photos"
 STREAM_ROOT="$PROJECT_ROOT/stream"
+ROOMLIST_ROOT="$PROJECT_ROOT/roomlist"
 LOG_DIR="$PROJECT_ROOT/local-logs"
 PID_DIR="$PROJECT_ROOT/local-pids"
 
@@ -41,10 +42,12 @@ SONGS_SERVICE_DIR="$PROJECT_ROOT/songs/songs-service"
 SONGS_UI_DIR="$PROJECT_ROOT/songs/ui/songs-web"
 STREAM_SERVICE_DIR="$STREAM_ROOT/stream-service"
 STREAM_UI_DIR="$STREAM_ROOT/stream-ui"
+LISTING_SERVICE_DIR="$ROOMLIST_ROOT/listing-service"
+ROOMLIST_UI_DIR="$ROOMLIST_ROOT/roomlist-ui/web"
 INDEX_HTML="$WEB_DIR/src/index.html"
 PHOTOS_INDEX_HTML="$PHOTOS_UI_DIR/src/index.html"
 
-ALL_PROCESSES="eureka-server user-service inventory-service billing-service orders-service photo-service gateway sevis-web photos-ui kids-study-service kids-study-ui stream-service tunnel-gateway tunnel-web tunnel-photos"
+ALL_PROCESSES="eureka-server user-service inventory-service billing-service orders-service photo-service listing-service gateway sevis-web photos-ui roomlist-ui kids-study-service kids-study-ui stream-service tunnel-gateway tunnel-web tunnel-photos"
 
 mkdir -p "$LOG_DIR" "$PID_DIR"
 
@@ -61,6 +64,7 @@ service_dir() {
     photo-service)         echo "$PHOTO_SERVICE_DIR" ;;
     kids-study-service)    echo "$KIDS_STUDY_SERVICE_DIR" ;;
     stream-service)        echo "$STREAM_SERVICE_DIR" ;;
+    listing-service)       echo "$LISTING_SERVICE_DIR" ;;
   esac
 }
 
@@ -168,7 +172,7 @@ if [ "$SKIP_BUILD" = "0" ]; then
 
   echo ""
   echo "[1] Building all service JARs..."
-  for svc in $SEVIS_SERVICES photo-service kids-study-service stream-service; do
+  for svc in $SEVIS_SERVICES photo-service kids-study-service stream-service listing-service; do
     local_dir="$(service_dir "$svc")"
     if [ -z "$local_dir" ] || [ ! -d "$local_dir" ]; then
       echo "    ⚠ Skipping $svc — directory not found"
@@ -226,7 +230,7 @@ for i in $(seq 1 40); do
   sleep 1
 done
 
-for svc in user-service inventory-service billing-service orders-service photo-service kids-study-service; do
+for svc in user-service inventory-service billing-service orders-service photo-service kids-study-service listing-service; do
   start_java_service "$svc"
 done
 
@@ -314,7 +318,15 @@ build_ui() {
   local name="$1"
   local dir="$2"
   echo "    Building $name..."
-  cd "$dir" && npx ng build --configuration production -q
+  cd "$dir"
+  # roomlist-ui's Tailwind classes are pre-compiled via the Tailwind CLI directly
+  # into src/styles.css (see package.json build:css) because Angular's built-in
+  # Tailwind v4 integration silently drops @apply and template class-scanning —
+  # `ng build` alone would ship an unstyled page.
+  if [ "$name" = "roomlist-ui" ]; then
+    npm run build:css -q
+  fi
+  npx ng build --configuration production -q
   if [ $? -ne 0 ]; then
     echo "    ✗ Build failed for $name"
     return 1
@@ -356,6 +368,7 @@ if [ "$SKIP_BUILD" = "0" ]; then
   build_ui "photos-ui"     "$PHOTOS_UI_DIR"
   build_ui "kids-study-ui" "$KIDS_STUDY_UI_DIR"
   build_ui "stream-ui"     "$STREAM_UI_DIR"
+  build_ui "roomlist-ui"   "$ROOMLIST_UI_DIR"
   echo "    ↳ stream-ui served by Nginx on port 3021 (dist rebuilt above)"
 else
   echo "[4] Skipping UI build (--skip-build)"
@@ -364,6 +377,7 @@ fi
 start_static_ui "sevis-web"     "$WEB_DIR/dist/sevis-web/browser"          4200 "/user-service,/orders-service,/inventory-service,/billing-service" 5
 start_static_ui "photos-ui"     "$PHOTOS_UI_DIR/dist/photos-ui/browser"    4201 "/user-service,/photo-service,/stream-service"                     6
 start_static_ui "kids-study-ui" "$KIDS_STUDY_UI_DIR/dist/kids-study/browser" 3010 "/kids-study-service" 7 "/sitemap.xml=/kids-study-service/sitemap.xml"
+start_static_ui "roomlist-ui"   "$ROOMLIST_UI_DIR/dist/roomlist-web/browser" 4202 "/user-service,/listing-service" 8
 
 # ── Summary ───────────────────────────────────────────────────
 
@@ -377,6 +391,7 @@ echo "║  SEVIS UI → http://localhost:4200            ║"
 echo "║  Photos   → http://localhost:4201            ║"
 echo "║  Kids App → http://localhost:3010            ║"
 echo "║  Stream   → http://localhost:3021            ║"
+echo "║  RoomDekho→ http://localhost:4202            ║"
 if [ -n "$GATEWAY_TUNNEL_URL" ]; then
 echo "╠══════════════════════════════════════════════╣"
 printf "║  Gateway  → %-32s║\n" "$GATEWAY_TUNNEL_URL"
