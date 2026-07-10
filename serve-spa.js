@@ -52,6 +52,7 @@ const MIME_TYPES = {
   '.mp4'  : 'video/mp4',
   '.webp' : 'image/webp',
   '.txt'  : 'text/plain',
+  '.xml'  : 'application/xml; charset=utf-8',
 };
 
 // ── Proxy a request to the gateway ───────────────────────────────────────────
