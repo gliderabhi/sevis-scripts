@@ -377,7 +377,7 @@ fi
 start_static_ui "sevis-web"     "$WEB_DIR/dist/sevis-web/browser"          4200 "/user-service,/orders-service,/inventory-service,/billing-service" 5
 start_static_ui "photos-ui"     "$PHOTOS_UI_DIR/dist/photos-ui/browser"    4201 "/user-service,/photo-service,/stream-service"                     6
 start_static_ui "kids-study-ui" "$KIDS_STUDY_UI_DIR/dist/kids-study/browser" 3010 "/kids-study-service" 7 "/sitemap.xml=/kids-study-service/sitemap.xml"
-start_static_ui "roomlist-ui"   "$ROOMLIST_UI_DIR/dist/roomlist-web/browser" 4202 "/user-service,/listing-service" 8
+start_static_ui "roomlist-ui"   "$ROOMLIST_UI_DIR/dist/roomlist-web/browser" 4202 "/user-service,/listing-service,/chat-service" 8
 
 # ── Summary ───────────────────────────────────────────────────
 
