@@ -32,8 +32,9 @@ else
 fi
 JAVA="$JAVA_HOME/bin/java"
 
-SEVIS_SERVICES="eureka-server user-service inventory-service billing-service orders-service gateway"
+SEVIS_SERVICES="eureka-server user-service inventory-service billing-service orders-service attendance-service gateway"
 PHOTO_SERVICE_DIR="$PHOTOS_ROOT/photo-service"
+FACE_SERVICE_DIR="$PHOTOS_ROOT/face-service"
 PHOTOS_UI_DIR="$PHOTOS_ROOT/photos-ui/web"
 WEB_DIR="$SEVIS_ROOT/ui/sevis-web"
 KIDS_STUDY_SERVICE_DIR="$PROJECT_ROOT/kids-study/service"
@@ -47,7 +48,7 @@ ROOMLIST_UI_DIR="$ROOMLIST_ROOT/roomlist-ui/web"
 INDEX_HTML="$WEB_DIR/src/index.html"
 PHOTOS_INDEX_HTML="$PHOTOS_UI_DIR/src/index.html"
 
-ALL_PROCESSES="eureka-server user-service inventory-service billing-service orders-service photo-service listing-service gateway sevis-web photos-ui roomlist-ui kids-study-service kids-study-ui stream-service tunnel-gateway tunnel-web tunnel-photos"
+ALL_PROCESSES="eureka-server user-service inventory-service billing-service orders-service attendance-service photo-service face-service listing-service gateway sevis-web photos-ui roomlist-ui kids-study-service kids-study-ui stream-service tunnel-gateway tunnel-web tunnel-photos"
 
 mkdir -p "$LOG_DIR" "$PID_DIR"
 
@@ -61,6 +62,7 @@ service_dir() {
     inventory-service) echo "$SEVIS_ROOT/inventory-service" ;;
     billing-service)   echo "$SEVIS_ROOT/billing-service" ;;
     orders-service)    echo "$SEVIS_ROOT/orders-service" ;;
+    attendance-service) echo "$SEVIS_ROOT/attendance-service" ;;
     photo-service)         echo "$PHOTO_SERVICE_DIR" ;;
     kids-study-service)    echo "$KIDS_STUDY_SERVICE_DIR" ;;
     stream-service)        echo "$STREAM_SERVICE_DIR" ;;
@@ -220,6 +222,32 @@ start_java_service() {
 echo ""
 echo "[2] Starting Java services..."
 
+# face-service is a plain Python/uvicorn process, not a JAR — started before
+# photo-service since photo-service calls it (best-effort/async, see
+# photo-service's FaceService, so a slow start here won't block uploads, but
+# no point racing it either).
+start_face_service() {
+  local log="$LOG_DIR/face-service.log"
+  local pid_file="$PID_DIR/face-service.pid"
+
+  if is_running "face-service"; then
+    echo "    ⚠ face-service already running (PID $(cat "$pid_file")) — skipping"
+    return 0
+  fi
+
+  if [ ! -d "$FACE_SERVICE_DIR" ]; then
+    echo "    ⚠ face-service directory not found — skipping"
+    return 0
+  fi
+
+  cd "$FACE_SERVICE_DIR"
+  nohup python3 -m uvicorn main:app --host 0.0.0.0 --port 8600 > "$log" 2>&1 &
+  echo $! > "$pid_file"
+  echo "    ✓ face-service started (PID $!) → $log"
+}
+
+start_face_service
+
 start_java_service "eureka-server"
 echo "    Waiting for Eureka to be ready..."
 for i in $(seq 1 40); do
@@ -230,7 +258,7 @@ for i in $(seq 1 40); do
   sleep 1
 done
 
-for svc in user-service inventory-service billing-service orders-service photo-service kids-study-service listing-service; do
+for svc in user-service inventory-service billing-service orders-service attendance-service photo-service kids-study-service listing-service; do
   start_java_service "$svc"
 done
 
@@ -374,7 +402,7 @@ else
   echo "[4] Skipping UI build (--skip-build)"
 fi
 
-start_static_ui "sevis-web"     "$WEB_DIR/dist/sevis-web/browser"          4200 "/user-service,/orders-service,/inventory-service,/billing-service" 5
+start_static_ui "sevis-web"     "$WEB_DIR/dist/sevis-web/browser"          4200 "/user-service,/orders-service,/inventory-service,/billing-service,/attendance-service" 5
 start_static_ui "photos-ui"     "$PHOTOS_UI_DIR/dist/photos-ui/browser"    4201 "/user-service,/photo-service,/stream-service"                     6
 start_static_ui "kids-study-ui" "$KIDS_STUDY_UI_DIR/dist/kids-study/browser" 3010 "/kids-study-service" 7 "/sitemap.xml=/kids-study-service/sitemap.xml"
 start_static_ui "roomlist-ui"   "$ROOMLIST_UI_DIR/dist/roomlist-web/browser" 4202 "/user-service,/listing-service,/chat-service" 8
@@ -392,6 +420,7 @@ echo "║  Photos   → http://localhost:4201            ║"
 echo "║  Kids App → http://localhost:3010            ║"
 echo "║  Stream   → http://localhost:3021            ║"
 echo "║  RoomDekho→ http://localhost:4202            ║"
+echo "║  Faces    → http://localhost:8600 (internal) ║"
 if [ -n "$GATEWAY_TUNNEL_URL" ]; then
 echo "╠══════════════════════════════════════════════╣"
 printf "║  Gateway  → %-32s║\n" "$GATEWAY_TUNNEL_URL"
