@@ -45,6 +45,10 @@ STREAM_SERVICE_DIR="$STREAM_ROOT/stream-service"
 STREAM_UI_DIR="$STREAM_ROOT/stream-ui"
 LISTING_SERVICE_DIR="$ROOMLIST_ROOT/listing-service"
 ROOMLIST_UI_DIR="$ROOMLIST_ROOT/roomlist-ui/web"
+# Static placeholder for the bare sevis.store root domain (no subdomain) —
+# just hosts the ExoClick site-verification tag and links out to the real
+# apps, which all live on subdomains (auto., stories., etc). No build step.
+SEVIS_ROOT_PLACEHOLDER_DIR="$PROJECT_ROOT/sevis-root-placeholder/dist"
 INDEX_HTML="$WEB_DIR/src/index.html"
 PHOTOS_INDEX_HTML="$PHOTOS_UI_DIR/src/index.html"
 
@@ -406,6 +410,7 @@ start_static_ui "sevis-web"     "$WEB_DIR/dist/sevis-web/browser"          4200 
 start_static_ui "photos-ui"     "$PHOTOS_UI_DIR/dist/photos-ui/browser"    4201 "/user-service,/photo-service,/stream-service"                     6
 start_static_ui "kids-study-ui" "$KIDS_STUDY_UI_DIR/dist/kids-study/browser" 3010 "/kids-study-service" 7 "/sitemap.xml=/kids-study-service/sitemap.xml"
 start_static_ui "roomlist-ui"   "$ROOMLIST_UI_DIR/dist/roomlist-web/browser" 4202 "/user-service,/listing-service,/chat-service" 8
+start_static_ui "sevis-root"    "$SEVIS_ROOT_PLACEHOLDER_DIR"               4210 "" 9
 
 # ── Summary ───────────────────────────────────────────────────
 

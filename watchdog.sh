@@ -234,6 +234,17 @@ if ! http_ok "http://localhost:3010"; then
     log "STARTED kids-study-ui (PID $!)"
 fi
 
+# ── 6b. sevis-root (static :4210) — bare sevis.store placeholder ─────
+if ! http_ok "http://localhost:4210"; then
+    log "DOWN: sevis-root — restarting"
+    pkill -f "serve-spa.js.*4210" 2>/dev/null || true
+    sleep 1
+    nohup node "$PROJECT_ROOT/sevis-scripts/serve-spa.js" "$PROJECT_ROOT/sevis-root-placeholder/dist" 4210 "" \
+        >> "$LOG_DIR/sevis-root.log" 2>&1 &
+    echo $! > "$PID_DIR/sevis-root.pid"
+    log "STARTED sevis-root (PID $!)"
+fi
+
 # ── 7. aria2c RPC (required for stream-service torrent downloads) ─
 if ! pgrep -x aria2c > /dev/null; then
     log "DOWN: aria2c — restarting"
