@@ -17,6 +17,8 @@ KIDS_ROOT="$PROJECT_ROOT/kids-study"
 STREAM_ROOT="$PROJECT_ROOT/stream"
 ROOMLIST_ROOT="$PROJECT_ROOT/roomlist"
 ROOMLIST_UI_DIR="$ROOMLIST_ROOT/roomlist-ui/web"
+DRIVE_ROOT="$PROJECT_ROOT/drive"
+DRIVE_UI_DIR="$DRIVE_ROOT/drive-ui/web"
 LOG_DIR="$PROJECT_ROOT/local-logs"
 PID_DIR="$PROJECT_ROOT/local-pids"
 JAVA="/usr/lib/jvm/java-21-openjdk-amd64/bin/java"
@@ -40,6 +42,7 @@ jar_for() {
         kids-study-service) echo "$KIDS_ROOT/service/build/libs/kids-study-service-0.0.1-SNAPSHOT.jar" ;;
         stream-service)     echo "$STREAM_ROOT/stream-service/build/libs/stream-service-0.0.1-SNAPSHOT.jar" ;;
         listing-service)    echo "$ROOMLIST_ROOT/listing-service/build/libs/listing-service-0.0.1-SNAPSHOT.jar" ;;
+        drive-service)      echo "$DRIVE_ROOT/drive-service/build/libs/drive-service-0.0.1-SNAPSHOT.jar" ;;
     esac
 }
 
@@ -174,7 +177,7 @@ if ! java_running "eureka-server" || ! http_ok "http://localhost:8761/actuator/h
 fi
 
 # ── 2. Core Java services ─────────────────────────────────────
-for svc in user-service inventory-service billing-service orders-service photo-service kids-study-service listing-service; do
+for svc in user-service inventory-service billing-service orders-service photo-service kids-study-service listing-service drive-service; do
     if ! java_running "$svc"; then
         log "DOWN: $svc — restarting"
         start_java_service "$svc"
@@ -222,6 +225,16 @@ if ! http_ok "http://localhost:4202"; then
     nohup npm --prefix "$ROOMLIST_UI_DIR" start >> "$LOG_DIR/roomlist-ui.log" 2>&1 &
     echo $! > "$PID_DIR/roomlist-ui.pid"
     log "STARTED roomlist-ui (PID $!)"
+fi
+
+# ── 5c. drive-ui (Angular :4204) ──────────────────────────────
+if ! http_ok "http://localhost:4204"; then
+    log "DOWN: drive-ui — restarting"
+    pkill -f "ng serve --port 4204" 2>/dev/null || true
+    sleep 1
+    nohup npm --prefix "$DRIVE_UI_DIR" start >> "$LOG_DIR/drive-ui.log" 2>&1 &
+    echo $! > "$PID_DIR/drive-ui.pid"
+    log "STARTED drive-ui (PID $!)"
 fi
 
 # ── 6. kids-study-ui (Angular :3010) ──────────────────────────

@@ -17,6 +17,7 @@ COMMON_ROOT="$PROJECT_ROOT/common"
 PHOTOS_ROOT="$PROJECT_ROOT/photos"
 STREAM_ROOT="$PROJECT_ROOT/stream"
 ROOMLIST_ROOT="$PROJECT_ROOT/roomlist"
+DRIVE_ROOT="$PROJECT_ROOT/drive"
 LOG_DIR="$PROJECT_ROOT/local-logs"
 PID_DIR="$PROJECT_ROOT/local-pids"
 
@@ -45,14 +46,17 @@ STREAM_SERVICE_DIR="$STREAM_ROOT/stream-service"
 STREAM_UI_DIR="$STREAM_ROOT/stream-ui"
 LISTING_SERVICE_DIR="$ROOMLIST_ROOT/listing-service"
 ROOMLIST_UI_DIR="$ROOMLIST_ROOT/roomlist-ui/web"
+DRIVE_SERVICE_DIR="$DRIVE_ROOT/drive-service"
+DRIVE_UI_DIR="$DRIVE_ROOT/drive-ui/web"
 # Static placeholder for the bare sevis.store root domain (no subdomain) —
 # just hosts the ExoClick site-verification tag and links out to the real
 # apps, which all live on subdomains (auto., stories., etc). No build step.
 SEVIS_ROOT_PLACEHOLDER_DIR="$PROJECT_ROOT/sevis-root-placeholder/dist"
 INDEX_HTML="$WEB_DIR/src/index.html"
 PHOTOS_INDEX_HTML="$PHOTOS_UI_DIR/src/index.html"
+DRIVE_INDEX_HTML="$DRIVE_UI_DIR/src/index.html"
 
-ALL_PROCESSES="eureka-server user-service inventory-service billing-service orders-service attendance-service photo-service face-service listing-service gateway sevis-web photos-ui roomlist-ui kids-study-service kids-study-ui stream-service tunnel-gateway tunnel-web tunnel-photos"
+ALL_PROCESSES="eureka-server user-service inventory-service billing-service orders-service attendance-service photo-service face-service listing-service drive-service gateway sevis-web photos-ui roomlist-ui drive-ui kids-study-service kids-study-ui stream-service tunnel-gateway tunnel-web tunnel-photos tunnel-drive"
 
 mkdir -p "$LOG_DIR" "$PID_DIR"
 
@@ -71,6 +75,7 @@ service_dir() {
     kids-study-service)    echo "$KIDS_STUDY_SERVICE_DIR" ;;
     stream-service)        echo "$STREAM_SERVICE_DIR" ;;
     listing-service)       echo "$LISTING_SERVICE_DIR" ;;
+    drive-service)         echo "$DRIVE_SERVICE_DIR" ;;
   esac
 }
 
@@ -92,6 +97,16 @@ inject_photos_api_url() {
 
 remove_photos_api_url() {
   [ -f "$PHOTOS_INDEX_HTML" ] && sed -i '/window\.__PHOTOS_API_URL__/d' "$PHOTOS_INDEX_HTML"
+}
+
+inject_drive_api_url() {
+  sed -i '/window\.__DRIVE_API_URL__/d' "$DRIVE_INDEX_HTML"
+  sed -i "s|<base href=\"/\">|<base href=\"/\">\n  <script>window.__DRIVE_API_URL__ = '$1';</script>|" "$DRIVE_INDEX_HTML"
+  echo "    ✓ Injected Drive API URL: $1"
+}
+
+remove_drive_api_url() {
+  [ -f "$DRIVE_INDEX_HTML" ] && sed -i '/window\.__DRIVE_API_URL__/d' "$DRIVE_INDEX_HTML"
 }
 
 is_running() {
@@ -116,6 +131,7 @@ stop_all() {
   done
   remove_api_url
   remove_photos_api_url
+  remove_drive_api_url
   echo "Done."
 }
 
@@ -178,7 +194,7 @@ if [ "$SKIP_BUILD" = "0" ]; then
 
   echo ""
   echo "[1] Building all service JARs..."
-  for svc in $SEVIS_SERVICES photo-service kids-study-service stream-service listing-service; do
+  for svc in $SEVIS_SERVICES photo-service kids-study-service stream-service listing-service drive-service; do
     local_dir="$(service_dir "$svc")"
     if [ -z "$local_dir" ] || [ ! -d "$local_dir" ]; then
       echo "    ⚠ Skipping $svc — directory not found"
@@ -262,7 +278,7 @@ for i in $(seq 1 40); do
   sleep 1
 done
 
-for svc in user-service inventory-service billing-service orders-service attendance-service photo-service kids-study-service listing-service; do
+for svc in user-service inventory-service billing-service orders-service attendance-service photo-service kids-study-service listing-service drive-service; do
   start_java_service "$svc"
 done
 
@@ -306,6 +322,7 @@ start_java_service "gateway"
 GATEWAY_TUNNEL_URL=""
 WEB_TUNNEL_URL=""
 PHOTOS_TUNNEL_URL="https://photos.sevis.store"
+DRIVE_TUNNEL_URL="https://drive.sevis.store"
 
 if [ "$WITH_TUNNEL" = "1" ]; then
   echo ""
@@ -321,6 +338,14 @@ if [ "$WITH_TUNNEL" = "1" ]; then
   echo $! > "$PID_DIR/tunnel-photos.pid"
   echo "    ✓ Photos tunnel: $PHOTOS_TUNNEL_URL"
 
+  # Requires a drive.sevis.store DNS record + Cloudflare Tunnel public-hostname
+  # mapping to already exist on the Cloudflare account (one-time manual setup,
+  # same as was done for photos.sevis.store) — cloudflared will just fail to
+  # route it otherwise, same as any other --hostname tunnel here.
+  nohup cloudflared tunnel --hostname drive.sevis.store --url http://localhost:4204 --logfile "$LOG_DIR/tunnel-drive.log" > /dev/null 2>&1 &
+  echo $! > "$PID_DIR/tunnel-drive.pid"
+  echo "    ✓ Drive tunnel: $DRIVE_TUNNEL_URL"
+
   echo "    Waiting 8s for tunnel URLs to appear..."
   sleep 8
 
@@ -330,6 +355,7 @@ if [ "$WITH_TUNNEL" = "1" ]; then
   if [ -n "$GATEWAY_TUNNEL_URL" ]; then
     inject_api_url "$GATEWAY_TUNNEL_URL"
     inject_photos_api_url "$GATEWAY_TUNNEL_URL"
+    inject_drive_api_url "$GATEWAY_TUNNEL_URL"
     echo "    ✓ Gateway tunnel: $GATEWAY_TUNNEL_URL"
   else
     echo "    ✗ Could not detect gateway tunnel URL — check $LOG_DIR/tunnel-gateway.log"
@@ -340,6 +366,7 @@ if [ "$WITH_TUNNEL" = "1" ]; then
 else
   remove_api_url
   remove_photos_api_url
+  remove_drive_api_url
 fi
 
 # ── Start Angular UIs (static builds via serve-spa.js) ────────
@@ -401,6 +428,7 @@ if [ "$SKIP_BUILD" = "0" ]; then
   build_ui "kids-study-ui" "$KIDS_STUDY_UI_DIR"
   build_ui "stream-ui"     "$STREAM_UI_DIR"
   build_ui "roomlist-ui"   "$ROOMLIST_UI_DIR"
+  build_ui "drive-ui"      "$DRIVE_UI_DIR"
   echo "    ↳ stream-ui served by Nginx on port 3021 (dist rebuilt above)"
 else
   echo "[4] Skipping UI build (--skip-build)"
@@ -410,7 +438,8 @@ start_static_ui "sevis-web"     "$WEB_DIR/dist/sevis-web/browser"          4200 
 start_static_ui "photos-ui"     "$PHOTOS_UI_DIR/dist/photos-ui/browser"    4201 "/user-service,/photo-service,/stream-service"                     6
 start_static_ui "kids-study-ui" "$KIDS_STUDY_UI_DIR/dist/kids-study/browser" 3010 "/kids-study-service" 7 "/sitemap.xml=/kids-study-service/sitemap.xml"
 start_static_ui "roomlist-ui"   "$ROOMLIST_UI_DIR/dist/roomlist-web/browser" 4202 "/user-service,/listing-service,/chat-service" 8
-start_static_ui "sevis-root"    "$SEVIS_ROOT_PLACEHOLDER_DIR"               4210 "" 9
+start_static_ui "drive-ui"      "$DRIVE_UI_DIR/dist/drive-ui/browser"        4204 "/user-service,/drive-service" 9
+start_static_ui "sevis-root"    "$SEVIS_ROOT_PLACEHOLDER_DIR"               4210 "" 10
 
 # ── Summary ───────────────────────────────────────────────────
 
@@ -425,12 +454,14 @@ echo "║  Photos   → http://localhost:4201            ║"
 echo "║  Kids App → http://localhost:3010            ║"
 echo "║  Stream   → http://localhost:3021            ║"
 echo "║  RoomDekho→ http://localhost:4202            ║"
+echo "║  Drive    → http://localhost:4204            ║"
 echo "║  Faces    → http://localhost:8600 (internal) ║"
 if [ -n "$GATEWAY_TUNNEL_URL" ]; then
 echo "╠══════════════════════════════════════════════╣"
 printf "║  Gateway  → %-32s║\n" "$GATEWAY_TUNNEL_URL"
 printf "║  Web UI   → %-32s║\n" "$WEB_TUNNEL_URL"
 printf "║  Photos   → %-32s║\n" "$PHOTOS_TUNNEL_URL"
+printf "║  Drive    → %-32s║\n" "$DRIVE_TUNNEL_URL"
 fi
 echo "╠══════════════════════════════════════════════╣"
 echo "║  Logs   → $LOG_DIR"
