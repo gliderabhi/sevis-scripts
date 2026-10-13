@@ -19,6 +19,7 @@ ROOMLIST_ROOT="$PROJECT_ROOT/roomlist"
 ROOMLIST_UI_DIR="$ROOMLIST_ROOT/roomlist-ui/web"
 DRIVE_ROOT="$PROJECT_ROOT/drive"
 DRIVE_UI_DIR="$DRIVE_ROOT/drive-ui/web"
+PHYSICS_UI_DIR="$PROJECT_ROOT/physics-math-youtube/ui"
 LOG_DIR="$PROJECT_ROOT/local-logs"
 PID_DIR="$PROJECT_ROOT/local-pids"
 JAVA="/usr/lib/jvm/java-21-openjdk-amd64/bin/java"
@@ -237,6 +238,16 @@ if ! http_ok "http://localhost:4204"; then
     log "STARTED drive-ui (PID $!)"
 fi
 
+# ── 5d. physics-ui (Angular :4205) ────────────────────────────
+if ! http_ok "http://localhost:4205"; then
+    log "DOWN: physics-ui — restarting"
+    pkill -f "ng serve --port 4205" 2>/dev/null || true
+    sleep 1
+    nohup npm --prefix "$PHYSICS_UI_DIR" start >> "$LOG_DIR/physics-ui.log" 2>&1 &
+    echo $! > "$PID_DIR/physics-ui.pid"
+    log "STARTED physics-ui (PID $!)"
+fi
+
 # ── 6. kids-study-ui (Angular :3010) ──────────────────────────
 if ! http_ok "http://localhost:3010"; then
     log "DOWN: kids-study-ui — restarting"
@@ -287,5 +298,6 @@ ensure_systemd_service "eci-results.service"       "http://localhost:3000"
 ensure_systemd_service "yt-dlp-downloader.service" "http://localhost:5050"
 ensure_systemd_service "sevis-portal.service"      "http://localhost:5051"
 ensure_systemd_service "jackett.service"           "http://localhost:9117"
+ensure_systemd_service "physics-service.service"   "http://localhost:8099/health"
 
 log "--- Watchdog check complete ---"
